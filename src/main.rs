@@ -9,22 +9,27 @@ use mimalloc::MiMalloc;
 use std::time::{Duration, Instant};
 use windows::{
     Win32::{
-        Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM},
+        Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::{
             Dwm::{
-                DWM_WINDOW_CORNER_PREFERENCE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
-                DwmSetWindowAttribute,
+                DWM_WINDOW_CORNER_PREFERENCE, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmSetWindowAttribute,
             },
             Gdi::{
                 CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, CreateFontW, CreateSolidBrush,
                 DEFAULT_CHARSET, DEFAULT_PITCH, DeleteObject, FF_DONTCARE, FW_NORMAL, FW_SEMIBOLD,
-                GetMonitorInfoW, HBRUSH, HDC, HFONT, HGDIOBJ, MONITOR_DEFAULTTONEAREST,
-                MONITORINFO, MonitorFromPoint, OUT_DEFAULT_PRECIS, SetBkColor, SetTextColor,
+                FillRect, GetMonitorInfoW, HBRUSH, HDC, HFONT, HGDIOBJ, InvalidateRect,
+                MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint, OUT_DEFAULT_PRECIS,
+                SetBkColor, SetTextColor,
             },
         },
         System::{
             Console::{ATTACH_PARENT_PROCESS, AttachConsole},
             LibraryLoader::GetModuleHandleW,
+            Registry::{
+                HKEY, HKEY_CURRENT_USER, KEY_READ, REG_DWORD, RegCloseKey, RegCreateKeyW,
+                RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
+            },
         },
         UI::{
             Controls::{
@@ -42,18 +47,19 @@ use windows::{
             WindowsAndMessaging::{
                 AppendMenuW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreatePopupMenu,
                 CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow, DispatchMessageW,
-                FindWindowW, GWLP_USERDATA, GetCursorPos, GetMessageW, GetWindowLongPtrW, HICON,
-                IDC_ARROW, IDI_APPLICATION, IMAGE_ICON, IsWindowVisible, KillTimer,
-                LR_DEFAULTCOLOR, LoadCursorW, LoadIconW, LoadImageW, MENU_ITEM_FLAGS, MF_CHECKED,
-                MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, MoveWindow, PostMessageW,
-                PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SW_HIDE, SW_SHOW,
-                SendMessageW, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowTextW,
-                ShowWindow, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RIGHTBUTTON, TrackPopupMenu,
-                TranslateMessage, WA_INACTIVE, WINDOW_STYLE, WM_ACTIVATE, WM_APP, WM_CLOSE,
-                WM_COMMAND, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DEVICECHANGE, WM_DISPLAYCHANGE,
-                WM_DPICHANGED, WM_HSCROLL, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONUP,
-                WM_RBUTTONUP, WM_SETFONT, WM_TIMER, WM_USER, WNDCLASSEXW, WS_BORDER, WS_CHILD,
-                WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
+                FindWindowW, GWLP_USERDATA, GetClientRect, GetCursorPos, GetMessageW,
+                GetWindowLongPtrW, HICON, IDC_ARROW, IDI_APPLICATION, IMAGE_ICON, IsWindowVisible,
+                KillTimer, LR_DEFAULTCOLOR, LoadCursorW, LoadIconW, LoadImageW, MENU_ITEM_FLAGS,
+                MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, MoveWindow,
+                PostMessageW, PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SW_HIDE,
+                SW_SHOW, SendMessageW, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
+                SetWindowTextW, ShowWindow, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RIGHTBUTTON,
+                TrackPopupMenu, TranslateMessage, WA_INACTIVE, WINDOW_STYLE, WM_ACTIVATE, WM_APP,
+                WM_CLOSE, WM_COMMAND, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DEVICECHANGE,
+                WM_DISPLAYCHANGE, WM_DPICHANGED, WM_ERASEBKGND, WM_HSCROLL, WM_KEYDOWN,
+                WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_RBUTTONUP, WM_SETFONT, WM_SETTINGCHANGE,
+                WM_TIMER, WM_USER, WNDCLASSEXW, WS_BORDER, WS_CHILD, WS_EX_TOOLWINDOW,
+                WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
             },
         },
     },
@@ -78,15 +84,68 @@ const IDM_OPEN_SLIDERS: usize = 1001;
 const IDM_REFRESH_MONITORS: usize = 1002;
 const IDM_QUIT: usize = 1003;
 const IDM_TOGGLE_CONTRAST: usize = 1004;
+const IDM_TOGGLE_DARK_THEME: usize = 1005;
+const IDM_THEME_SYSTEM: usize = 1006;
+const IDM_THEME_DARK: usize = 1007;
+const IDM_THEME_LIGHT: usize = 1008;
 
 // SS_RIGHT and SS_ETCHEDHORZ for native Win32 static control alignment and subtle dividers
 const SS_RIGHT_STYLE: u32 = 0x0000_0002;
 const SS_ETCHEDHORZ_STYLE: u32 = 0x0000_0010;
 
-// Clean surface & typography palette (BGR COLORREF)
-const COLOR_SURFACE_BG: COLORREF = COLORREF(0x00F3F3F3);
-const COLOR_TEXT_PRIMARY: COLORREF = COLORREF(0x001A1A1A);
-const COLOR_TEXT_MUTED: COLORREF = COLORREF(0x006E6E6E);
+// Clean light & dark surface palettes (BGR COLORREF)
+const LIGHT_SURFACE_BG: COLORREF = COLORREF(0x00F3F3F3);
+const LIGHT_TEXT_PRIMARY: COLORREF = COLORREF(0x001A1A1A);
+const LIGHT_TEXT_MUTED: COLORREF = COLORREF(0x006E6E6E);
+
+const DARK_SURFACE_BG: COLORREF = COLORREF(0x00202020);
+const DARK_TEXT_PRIMARY: COLORREF = COLORREF(0x00F5F5F5);
+const DARK_TEXT_MUTED: COLORREF = COLORREF(0x00A0A0A0);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ThemeMode {
+    System = 0,
+    Dark = 1,
+    Light = 2,
+}
+
+impl ThemeMode {
+    fn from_u32(val: u32) -> Self {
+        match val {
+            1 => ThemeMode::Dark,
+            2 => ThemeMode::Light,
+            _ => ThemeMode::System,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ThemePalette {
+    is_dark: bool,
+    surface_bg: COLORREF,
+    text_primary: COLORREF,
+    text_muted: COLORREF,
+}
+
+impl ThemePalette {
+    fn for_dark(is_dark: bool) -> Self {
+        if is_dark {
+            Self {
+                is_dark: true,
+                surface_bg: DARK_SURFACE_BG,
+                text_primary: DARK_TEXT_PRIMARY,
+                text_muted: DARK_TEXT_MUTED,
+            }
+        } else {
+            Self {
+                is_dark: false,
+                surface_bg: LIGHT_SURFACE_BG,
+                text_primary: LIGHT_TEXT_PRIMARY,
+                text_muted: LIGHT_TEXT_MUTED,
+            }
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(version, about = "DDC/CI multi-monitor brightness & contrast control", long_about = None)]
@@ -156,6 +215,8 @@ struct FlyoutState {
     hinstance: HINSTANCE,
     tray_hicon: HICON,
     bg_brush: HBRUSH,
+    theme_mode: ThemeMode,
+    palette: ThemePalette,
     font_regular: HFONT,
     font_bold: HFONT,
     dpi: u32,
@@ -176,6 +237,117 @@ struct FlyoutState {
 #[inline]
 fn scale_dpi(px: i32, dpi: u32) -> i32 {
     (px * dpi as i32 + 48) / 96
+}
+
+/// Checks Windows Personalize registry to see if Dark Mode is enabled (AppsUseLightTheme == 0 or SystemUsesLightTheme == 0).
+unsafe fn is_windows_dark_theme_enabled() -> bool {
+    let mut hkey = HKEY::default();
+    let subkey = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
+    if RegOpenKeyExW(HKEY_CURRENT_USER, subkey, Some(0), KEY_READ, &mut hkey).is_ok() {
+        let mut data: u32 = 1;
+        let mut data_len: u32 = std::mem::size_of::<u32>() as u32;
+        let res = RegQueryValueExW(
+            hkey,
+            w!("AppsUseLightTheme"),
+            None,
+            None,
+            Some(&mut data as *mut u32 as *mut u8),
+            Some(&mut data_len),
+        );
+        let _ = RegCloseKey(hkey);
+        if res.is_ok() {
+            return data == 0;
+        }
+    }
+    false
+}
+
+/// Loads saved user preferences (`ThemeMode` and `ShowContrast`) from `HKCU\Software\ddcci`.
+unsafe fn load_user_preferences() -> (ThemeMode, bool) {
+    let mut hkey = HKEY::default();
+    let mut theme_mode = ThemeMode::System;
+    let mut show_contrast = true;
+
+    if RegOpenKeyExW(
+        HKEY_CURRENT_USER,
+        w!("Software\\ddcci"),
+        Some(0),
+        KEY_READ,
+        &mut hkey,
+    )
+    .is_ok()
+    {
+        let mut data: u32 = 0;
+        let mut data_len = std::mem::size_of::<u32>() as u32;
+        if RegQueryValueExW(
+            hkey,
+            w!("ThemeMode"),
+            None,
+            None,
+            Some(&mut data as *mut u32 as *mut u8),
+            Some(&mut data_len),
+        )
+        .is_ok()
+        {
+            theme_mode = ThemeMode::from_u32(data);
+        }
+
+        let mut contrast_data: u32 = 1;
+        let mut contrast_len = std::mem::size_of::<u32>() as u32;
+        if RegQueryValueExW(
+            hkey,
+            w!("ShowContrast"),
+            None,
+            None,
+            Some(&mut contrast_data as *mut u32 as *mut u8),
+            Some(&mut contrast_len),
+        )
+        .is_ok()
+        {
+            show_contrast = contrast_data != 0;
+        }
+
+        let _ = RegCloseKey(hkey);
+    }
+
+    (theme_mode, show_contrast)
+}
+
+/// Persists user preferences (`ThemeMode` and `ShowContrast`) to `HKCU\Software\ddcci`.
+unsafe fn save_user_preferences(theme_mode: ThemeMode, show_contrast: bool) {
+    let mut hkey = HKEY::default();
+    if RegCreateKeyW(HKEY_CURRENT_USER, w!("Software\\ddcci"), &mut hkey).is_ok() {
+        let theme_val: u32 = theme_mode as u32;
+        let theme_bytes = std::slice::from_raw_parts(
+            &theme_val as *const u32 as *const u8,
+            std::mem::size_of::<u32>(),
+        );
+        let _ = RegSetValueExW(hkey, w!("ThemeMode"), Some(0), REG_DWORD, Some(theme_bytes));
+
+        let contrast_val: u32 = u32::from(show_contrast);
+        let contrast_bytes = std::slice::from_raw_parts(
+            &contrast_val as *const u32 as *const u8,
+            std::mem::size_of::<u32>(),
+        );
+        let _ = RegSetValueExW(
+            hkey,
+            w!("ShowContrast"),
+            Some(0),
+            REG_DWORD,
+            Some(contrast_bytes),
+        );
+
+        let _ = RegCloseKey(hkey);
+    }
+}
+
+unsafe fn resolve_palette(mode: ThemeMode) -> ThemePalette {
+    let is_dark = match mode {
+        ThemeMode::System => is_windows_dark_theme_enabled(),
+        ThemeMode::Dark => true,
+        ThemeMode::Light => false,
+    };
+    ThemePalette::for_dark(is_dark)
 }
 
 unsafe fn create_fonts_for_dpi(dpi: u32) -> (HFONT, HFONT) {
@@ -215,7 +387,7 @@ unsafe fn create_fonts_for_dpi(dpi: u32) -> (HFONT, HFONT) {
     (regular, bold)
 }
 
-unsafe fn enable_rounded_corners(hwnd: HWND) {
+unsafe fn apply_dwm_window_theme(hwnd: HWND, is_dark: bool) {
     let preference: DWM_WINDOW_CORNER_PREFERENCE = DWMWCP_ROUND;
     let _ = DwmSetWindowAttribute(
         hwnd,
@@ -223,6 +395,27 @@ unsafe fn enable_rounded_corners(hwnd: HWND) {
         &preference as *const _ as *const std::ffi::c_void,
         std::mem::size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32,
     );
+
+    let dark_mode: i32 = i32::from(is_dark);
+    let _ = DwmSetWindowAttribute(
+        hwnd,
+        DWMWA_USE_IMMERSIVE_DARK_MODE,
+        &dark_mode as *const _ as *const std::ffi::c_void,
+        std::mem::size_of::<i32>() as u32,
+    );
+}
+
+unsafe fn apply_theme_to_flyout(hwnd: HWND, state: &mut FlyoutState) {
+    let new_palette = resolve_palette(state.theme_mode);
+    let old_brush = state.bg_brush;
+    state.bg_brush = CreateSolidBrush(new_palette.surface_bg);
+    state.palette = new_palette;
+    let _ = DeleteObject(HGDIOBJ(old_brush.0));
+
+    apply_dwm_window_theme(hwnd, new_palette.is_dark);
+    let monitors = state.ddc.snapshots();
+    rebuild_monitor_controls(hwnd, state, &monitors);
+    let _ = InvalidateRect(Some(hwnd), None, true);
 }
 
 fn run_tray_ui() -> windows::core::Result<()> {
@@ -251,9 +444,9 @@ fn run_tray_ui() -> windows::core::Result<()> {
         let _ = InitCommonControlsEx(&icc);
 
         let hinstance: HINSTANCE = GetModuleHandleW(None)?.into();
-
-        // Clean light-gray surface matching standard Win32 Common Controls trackbar background
-        let bg_brush = CreateSolidBrush(COLOR_SURFACE_BG);
+        let (theme_mode, show_contrast) = load_user_preferences();
+        let palette = resolve_palette(theme_mode);
+        let bg_brush = CreateSolidBrush(palette.surface_bg);
 
         let wc = WNDCLASSEXW {
             cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
@@ -282,7 +475,7 @@ fn run_tray_ui() -> windows::core::Result<()> {
             None,
         )?;
 
-        enable_rounded_corners(hwnd);
+        apply_dwm_window_theme(hwnd, palette.is_dark);
 
         let raw_dpi = GetDpiForWindow(hwnd);
         let dpi = if raw_dpi == 0 { 96 } else { raw_dpi };
@@ -300,11 +493,13 @@ fn run_tray_ui() -> windows::core::Result<()> {
             hinstance,
             tray_hicon,
             bg_brush,
+            theme_mode,
+            palette,
             font_regular,
             font_bold,
             dpi,
             taskbar_created_msg,
-            show_contrast: true,
+            show_contrast,
             child_hwnds: Vec::new(),
             muted_hwnds: Vec::new(),
             headers: Vec::new(),
@@ -493,7 +688,12 @@ unsafe fn resize_visible_flyout(hwnd: HWND, state: &mut FlyoutState) {
     }
 }
 
-unsafe fn show_tray_context_menu(hwnd: HWND, show_contrast: bool) {
+unsafe fn show_tray_context_menu(
+    hwnd: HWND,
+    show_contrast: bool,
+    theme_mode: ThemeMode,
+    is_dark: bool,
+) {
     let mut pt = POINT::default();
     let _ = GetCursorPos(&mut pt);
 
@@ -503,6 +703,12 @@ unsafe fn show_tray_context_menu(hwnd: HWND, show_contrast: bool) {
         } else {
             MF_STRING | MF_UNCHECKED
         };
+        let dark_toggle_flags: MENU_ITEM_FLAGS = if is_dark {
+            MF_STRING | MF_CHECKED
+        } else {
+            MF_STRING | MF_UNCHECKED
+        };
+
         let _ = AppendMenuW(hmenu, MF_STRING, IDM_OPEN_SLIDERS, w!("Open Sliders"));
         let _ = AppendMenuW(
             hmenu,
@@ -510,6 +716,42 @@ unsafe fn show_tray_context_menu(hwnd: HWND, show_contrast: bool) {
             IDM_TOGGLE_CONTRAST,
             w!("Show Contrast"),
         );
+        let _ = AppendMenuW(
+            hmenu,
+            dark_toggle_flags,
+            IDM_TOGGLE_DARK_THEME,
+            w!("Dark Theme"),
+        );
+
+        if let Ok(theme_menu) = CreatePopupMenu() {
+            let sys_flags = if theme_mode == ThemeMode::System {
+                MF_STRING | MF_CHECKED
+            } else {
+                MF_STRING | MF_UNCHECKED
+            };
+            let dark_flags = if theme_mode == ThemeMode::Dark {
+                MF_STRING | MF_CHECKED
+            } else {
+                MF_STRING | MF_UNCHECKED
+            };
+            let light_flags = if theme_mode == ThemeMode::Light {
+                MF_STRING | MF_CHECKED
+            } else {
+                MF_STRING | MF_UNCHECKED
+            };
+
+            let _ = AppendMenuW(
+                theme_menu,
+                sys_flags,
+                IDM_THEME_SYSTEM,
+                w!("Use Windows Setting"),
+            );
+            let _ = AppendMenuW(theme_menu, dark_flags, IDM_THEME_DARK, w!("Dark"));
+            let _ = AppendMenuW(theme_menu, light_flags, IDM_THEME_LIGHT, w!("Light"));
+
+            let _ = AppendMenuW(hmenu, MF_POPUP, theme_menu.0 as usize, w!("Theme Mode"));
+        }
+
         let _ = AppendMenuW(
             hmenu,
             MF_STRING,
@@ -947,6 +1189,32 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
     }
 
     match msg {
+        WM_ERASEBKGND => {
+            if !state_ptr.is_null() {
+                let state = &*state_ptr;
+                let hdc = HDC(wparam.0 as *mut std::ffi::c_void);
+                let mut rc = RECT::default();
+                let _ = GetClientRect(hwnd, &mut rc);
+                let _ = FillRect(hdc, &rc, state.bg_brush);
+                return LRESULT(1);
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+
+        WM_SETTINGCHANGE => {
+            // Live-sync when Windows dark/light theme changes in Settings while ThemeMode::System is active
+            if !state_ptr.is_null() {
+                let state = &mut *state_ptr;
+                if state.theme_mode == ThemeMode::System {
+                    let next_dark = is_windows_dark_theme_enabled();
+                    if next_dark != state.palette.is_dark {
+                        apply_theme_to_flyout(hwnd, state);
+                    }
+                }
+            }
+            LRESULT(0)
+        }
+
         WM_ACTIVATE => {
             let active_state = (wparam.0 & 0xFFFF) as u32;
             if active_state == WA_INACTIVE {
@@ -1066,11 +1334,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 let state = &*state_ptr;
                 let hdc = HDC(wparam.0 as *mut std::ffi::c_void);
                 let ctrl_hwnd = HWND(lparam.0 as *mut std::ffi::c_void);
-                SetBkColor(hdc, COLOR_SURFACE_BG);
+                SetBkColor(hdc, state.palette.surface_bg);
                 if state.muted_hwnds.contains(&ctrl_hwnd) {
-                    SetTextColor(hdc, COLOR_TEXT_MUTED);
+                    SetTextColor(hdc, state.palette.text_muted);
                 } else {
-                    SetTextColor(hdc, COLOR_TEXT_PRIMARY);
+                    SetTextColor(hdc, state.palette.text_primary);
                 }
                 return LRESULT(state.bg_brush.0 as isize);
             }
@@ -1103,12 +1371,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     }
                 }
                 WM_RBUTTONUP => {
-                    let show_contrast = if !state_ptr.is_null() {
-                        (&*state_ptr).show_contrast
+                    let (show_contrast, theme_mode, is_dark) = if !state_ptr.is_null() {
+                        let s = &*state_ptr;
+                        (s.show_contrast, s.theme_mode, s.palette.is_dark)
                     } else {
-                        true
+                        (true, ThemeMode::System, is_windows_dark_theme_enabled())
                     };
-                    show_tray_context_menu(hwnd, show_contrast);
+                    show_tray_context_menu(hwnd, show_contrast, theme_mode, is_dark);
                 }
                 _ => {}
             }
@@ -1131,6 +1400,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     if !state_ptr.is_null() {
                         let state = &mut *state_ptr;
                         state.show_contrast = !state.show_contrast;
+                        save_user_preferences(state.theme_mode, state.show_contrast);
                         let snapshots = state.ddc.snapshots();
                         rebuild_monitor_controls(hwnd, state, &snapshots);
                         if IsWindowVisible(hwnd).as_bool() {
@@ -1138,6 +1408,30 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                         } else {
                             position_and_show_flyout(hwnd, state);
                         }
+                    }
+                }
+                IDM_TOGGLE_DARK_THEME => {
+                    if !state_ptr.is_null() {
+                        let state = &mut *state_ptr;
+                        state.theme_mode = if state.palette.is_dark {
+                            ThemeMode::Light
+                        } else {
+                            ThemeMode::Dark
+                        };
+                        save_user_preferences(state.theme_mode, state.show_contrast);
+                        apply_theme_to_flyout(hwnd, state);
+                    }
+                }
+                IDM_THEME_SYSTEM | IDM_THEME_DARK | IDM_THEME_LIGHT => {
+                    if !state_ptr.is_null() {
+                        let state = &mut *state_ptr;
+                        state.theme_mode = match cmd_id {
+                            IDM_THEME_DARK => ThemeMode::Dark,
+                            IDM_THEME_LIGHT => ThemeMode::Light,
+                            _ => ThemeMode::System,
+                        };
+                        save_user_preferences(state.theme_mode, state.show_contrast);
+                        apply_theme_to_flyout(hwnd, state);
                     }
                 }
                 IDM_REFRESH_MONITORS => {
