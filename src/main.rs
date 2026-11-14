@@ -275,7 +275,7 @@ fn run_tray_ui() -> windows::core::Result<()> {
             CW_USEDEFAULT,
             CW_USEDEFAULT,
             312,
-            88,
+            118,
             None,
             None,
             Some(hinstance),
@@ -304,14 +304,14 @@ fn run_tray_ui() -> windows::core::Result<()> {
             font_bold,
             dpi,
             taskbar_created_msg,
-            show_contrast: false,
+            show_contrast: true,
             child_hwnds: Vec::new(),
             muted_hwnds: Vec::new(),
             headers: Vec::new(),
             bindings: Vec::new(),
             rendered_topology: Vec::new(),
             flyout_width: scale_dpi(312, dpi),
-            flyout_height: scale_dpi(88, dpi),
+            flyout_height: scale_dpi(118, dpi),
             last_popup_pos: None,
             last_deactivated_at: None,
             ddc,
@@ -1106,7 +1106,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     let show_contrast = if !state_ptr.is_null() {
                         (&*state_ptr).show_contrast
                     } else {
-                        false
+                        true
                     };
                     show_tray_context_menu(hwnd, show_contrast);
                 }
