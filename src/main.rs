@@ -4,55 +4,60 @@
 mod ddc_manager;
 
 use clap::Parser;
-use ddc_manager::{apply_cli_commands, DdcManager, MonitorInfo};
+use ddc_manager::{DdcManager, MonitorInfo, apply_cli_commands};
 use mimalloc::MiMalloc;
 use std::time::{Duration, Instant};
 use windows::{
-    core::{w, PCWSTR},
     Win32::{
         Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM},
-        Graphics::Gdi::{
-            CreateFontW, CreateSolidBrush, DeleteObject, GetMonitorInfoW, MonitorFromPoint,
-            SetBkColor, SetTextColor, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET,
-            DEFAULT_PITCH, FF_DONTCARE, FW_NORMAL, FW_SEMIBOLD, HBRUSH, HDC, HFONT, HGDIOBJ,
-            MONITORINFO, MONITOR_DEFAULTTONEAREST, OUT_DEFAULT_PRECIS,
+        Graphics::{
+            Dwm::{
+                DWM_WINDOW_CORNER_PREFERENCE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+                DwmSetWindowAttribute,
+            },
+            Gdi::{
+                CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, CreateFontW, CreateSolidBrush,
+                DEFAULT_CHARSET, DEFAULT_PITCH, DeleteObject, FF_DONTCARE, FW_NORMAL, FW_SEMIBOLD,
+                GetMonitorInfoW, HBRUSH, HDC, HFONT, HGDIOBJ, MONITOR_DEFAULTTONEAREST,
+                MONITORINFO, MonitorFromPoint, OUT_DEFAULT_PRECIS, SetBkColor, SetTextColor,
+            },
         },
         System::{
-            Console::{AttachConsole, ATTACH_PARENT_PROCESS},
+            Console::{ATTACH_PARENT_PROCESS, AttachConsole},
             LibraryLoader::GetModuleHandleW,
         },
         UI::{
             Controls::{
-                InitCommonControlsEx, ICC_BAR_CLASSES, INITCOMMONCONTROLSEX, TBM_SETPOS,
-                TBM_SETRANGEMAX, TBM_SETRANGEMIN, TBM_SETTICFREQ, TBS_AUTOTICKS, TBS_HORZ,
-                TBS_TOOLTIPS, TRACKBAR_CLASSW,
+                ICC_BAR_CLASSES, INITCOMMONCONTROLSEX, InitCommonControlsEx, TBM_SETPOS,
+                TBM_SETRANGEMAX, TBM_SETRANGEMIN, TBS_HORZ, TBS_NOTICKS, TRACKBAR_CLASSW,
             },
             HiDpi::{
-                GetDpiForWindow, SetProcessDpiAwarenessContext,
-                DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+                DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForWindow,
+                SetProcessDpiAwarenessContext,
             },
             Shell::{
-                Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE,
-                NIM_MODIFY, NOTIFYICONDATAW,
+                NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW,
+                Shell_NotifyIconW,
             },
             WindowsAndMessaging::{
-                AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu,
-                DestroyWindow, DispatchMessageW, FindWindowW, GetCursorPos, GetMessageW,
-                GetWindowLongPtrW, IsWindowVisible, KillTimer, LoadCursorW, LoadIconW,
-                LoadImageW, MoveWindow, PostMessageW, PostQuitMessage, RegisterClassExW,
-                RegisterWindowMessageW, SendMessageW, SetForegroundWindow, SetTimer,
-                SetWindowLongPtrW, SetWindowTextW, ShowWindow, TrackPopupMenu, TranslateMessage,
-                BS_CENTER, BS_PUSHBUTTON, BS_VCENTER, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
-                GWLP_USERDATA, HICON, HMENU, IDC_ARROW, IDI_APPLICATION, IMAGE_ICON,
-                LR_DEFAULTCOLOR, MF_SEPARATOR, MF_STRING, MSG, SW_HIDE, SW_SHOW, TPM_BOTTOMALIGN,
-                TPM_LEFTALIGN, TPM_RIGHTBUTTON, WA_INACTIVE, WINDOW_STYLE, WM_ACTIVATE, WM_APP,
-                WM_CLOSE, WM_COMMAND, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DEVICECHANGE,
-                WM_DISPLAYCHANGE, WM_DPICHANGED, WM_HSCROLL, WM_KEYDOWN, WM_LBUTTONDBLCLK,
-                WM_LBUTTONUP, WM_RBUTTONUP, WM_SETFONT, WM_TIMER, WM_USER, WNDCLASSEXW, WS_BORDER,
-                WS_CHILD, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
+                AppendMenuW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreatePopupMenu,
+                CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow, DispatchMessageW,
+                FindWindowW, GWLP_USERDATA, GetCursorPos, GetMessageW, GetWindowLongPtrW, HICON,
+                IDC_ARROW, IDI_APPLICATION, IMAGE_ICON, IsWindowVisible, KillTimer,
+                LR_DEFAULTCOLOR, LoadCursorW, LoadIconW, LoadImageW, MENU_ITEM_FLAGS, MF_CHECKED,
+                MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, MoveWindow, PostMessageW,
+                PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SW_HIDE, SW_SHOW,
+                SendMessageW, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowTextW,
+                ShowWindow, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RIGHTBUTTON, TrackPopupMenu,
+                TranslateMessage, WA_INACTIVE, WINDOW_STYLE, WM_ACTIVATE, WM_APP, WM_CLOSE,
+                WM_COMMAND, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DEVICECHANGE, WM_DISPLAYCHANGE,
+                WM_DPICHANGED, WM_HSCROLL, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONUP,
+                WM_RBUTTONUP, WM_SETFONT, WM_TIMER, WM_USER, WNDCLASSEXW, WS_BORDER, WS_CHILD,
+                WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
             },
         },
     },
+    core::{PCWSTR, w},
 };
 
 #[global_allocator]
@@ -72,7 +77,16 @@ const TIMER_DISPLAY_SETTLE_2: usize = 2;
 const IDM_OPEN_SLIDERS: usize = 1001;
 const IDM_REFRESH_MONITORS: usize = 1002;
 const IDM_QUIT: usize = 1003;
-const IDM_CLOSE_FLYOUT: usize = 1004;
+const IDM_TOGGLE_CONTRAST: usize = 1004;
+
+// SS_RIGHT and SS_ETCHEDHORZ for native Win32 static control alignment and subtle dividers
+const SS_RIGHT_STYLE: u32 = 0x0000_0002;
+const SS_ETCHEDHORZ_STYLE: u32 = 0x0000_0010;
+
+// Clean surface & typography palette (BGR COLORREF)
+const COLOR_SURFACE_BG: COLORREF = COLORREF(0x00F3F3F3);
+const COLOR_TEXT_PRIMARY: COLORREF = COLORREF(0x001A1A1A);
+const COLOR_TEXT_MUTED: COLORREF = COLORREF(0x006E6E6E);
 
 #[derive(Parser, Debug)]
 #[command(version, about = "DDC/CI multi-monitor brightness & contrast control", long_about = None)]
@@ -127,12 +141,12 @@ struct SliderBinding {
     value_label_hwnd: HWND,
     last_value: u32,
     max_value: u32,
+    available: bool,
     is_dragging: bool,
 }
 
 struct MonitorHeaderBinding {
     monitor_id: String,
-    monitor_index: usize,
     header_hwnd: HWND,
     base_name: String,
     available: bool,
@@ -144,10 +158,11 @@ struct FlyoutState {
     bg_brush: HBRUSH,
     font_regular: HFONT,
     font_bold: HFONT,
-    font_close: HFONT,
     dpi: u32,
     taskbar_created_msg: u32,
+    show_contrast: bool,
     child_hwnds: Vec<HWND>,
+    muted_hwnds: Vec<HWND>,
     headers: Vec<MonitorHeaderBinding>,
     bindings: Vec<SliderBinding>,
     rendered_topology: Vec<String>,
@@ -163,9 +178,8 @@ fn scale_dpi(px: i32, dpi: u32) -> i32 {
     (px * dpi as i32 + 48) / 96
 }
 
-unsafe fn create_fonts_for_dpi(dpi: u32) -> (HFONT, HFONT, HFONT) {
+unsafe fn create_fonts_for_dpi(dpi: u32) -> (HFONT, HFONT) {
     let font_height = -scale_dpi(13, dpi);
-    let close_height = -scale_dpi(18, dpi);
     let regular = CreateFontW(
         font_height,
         0,
@@ -198,23 +212,17 @@ unsafe fn create_fonts_for_dpi(dpi: u32) -> (HFONT, HFONT, HFONT) {
         (DEFAULT_PITCH.0 | FF_DONTCARE.0) as u32,
         w!("Segoe UI"),
     );
-    let close = CreateFontW(
-        close_height,
-        0,
-        0,
-        0,
-        700,
-        0,
-        0,
-        0,
-        DEFAULT_CHARSET,
-        OUT_DEFAULT_PRECIS,
-        CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY,
-        (DEFAULT_PITCH.0 | FF_DONTCARE.0) as u32,
-        w!("Segoe UI"),
+    (regular, bold)
+}
+
+unsafe fn enable_rounded_corners(hwnd: HWND) {
+    let preference: DWM_WINDOW_CORNER_PREFERENCE = DWMWCP_ROUND;
+    let _ = DwmSetWindowAttribute(
+        hwnd,
+        DWMWA_WINDOW_CORNER_PREFERENCE,
+        &preference as *const _ as *const std::ffi::c_void,
+        std::mem::size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32,
     );
-    (regular, bold, close)
 }
 
 fn run_tray_ui() -> windows::core::Result<()> {
@@ -245,7 +253,7 @@ fn run_tray_ui() -> windows::core::Result<()> {
         let hinstance: HINSTANCE = GetModuleHandleW(None)?.into();
 
         // Clean light-gray surface matching standard Win32 Common Controls trackbar background
-        let bg_brush = CreateSolidBrush(COLORREF(0x00F3F3F3));
+        let bg_brush = CreateSolidBrush(COLOR_SURFACE_BG);
 
         let wc = WNDCLASSEXW {
             cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
@@ -266,17 +274,19 @@ fn run_tray_ui() -> windows::core::Result<()> {
             WS_POPUP | WS_BORDER,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
-            360,
-            130,
+            312,
+            88,
             None,
             None,
             Some(hinstance),
             None,
         )?;
 
+        enable_rounded_corners(hwnd);
+
         let raw_dpi = GetDpiForWindow(hwnd);
         let dpi = if raw_dpi == 0 { 96 } else { raw_dpi };
-        let (font_regular, font_bold, font_close) = create_fonts_for_dpi(dpi);
+        let (font_regular, font_bold) = create_fonts_for_dpi(dpi);
         let tray_hicon = load_tray_hicon(hinstance);
         let taskbar_created_msg = RegisterWindowMessageW(w!("TaskbarCreated"));
 
@@ -292,15 +302,16 @@ fn run_tray_ui() -> windows::core::Result<()> {
             bg_brush,
             font_regular,
             font_bold,
-            font_close,
             dpi,
             taskbar_created_msg,
+            show_contrast: false,
             child_hwnds: Vec::new(),
+            muted_hwnds: Vec::new(),
             headers: Vec::new(),
             bindings: Vec::new(),
             rendered_topology: Vec::new(),
-            flyout_width: scale_dpi(360, dpi),
-            flyout_height: scale_dpi(130, dpi),
+            flyout_width: scale_dpi(312, dpi),
+            flyout_height: scale_dpi(88, dpi),
             last_popup_pos: None,
             last_deactivated_at: None,
             ddc,
@@ -312,12 +323,7 @@ fn run_tray_ui() -> windows::core::Result<()> {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, state_ptr as isize);
 
         rebuild_monitor_controls(hwnd, &mut *state_ptr, &initial_monitors);
-        add_or_update_tray_icon(
-            hwnd,
-            tray_hicon_copy,
-            "DDC/CI Brightness & Contrast",
-            false,
-        )?;
+        add_or_update_tray_icon(hwnd, tray_hicon_copy, "DDC/CI Brightness & Contrast", false)?;
         position_and_show_flyout(hwnd, &mut *state_ptr);
 
         let mut msg = MSG::default();
@@ -368,7 +374,12 @@ unsafe fn add_or_update_tray_icon(
     };
 
     let max_len = nid.szTip.len() - 1;
-    for (dst, src) in nid.szTip.iter_mut().take(max_len).zip(tooltip.encode_utf16()) {
+    for (dst, src) in nid
+        .szTip
+        .iter_mut()
+        .take(max_len)
+        .zip(tooltip.encode_utf16())
+    {
         *dst = src;
     }
 
@@ -400,13 +411,13 @@ fn format_tray_tooltip(monitors: &[MonitorInfo]) -> String {
         .iter()
         .map(|m| {
             if m.available {
-                format!("{}: B {}% C {}%", m.index + 1, m.brightness, m.contrast)
+                format!("{}: {}%", m.display_name, m.brightness)
             } else {
-                format!("{}: Syncing...", m.index + 1)
+                format!("{}: ···", m.display_name)
             }
         })
         .collect();
-    parts.join(" | ")
+    parts.join("  •  ")
 }
 
 unsafe fn position_and_show_flyout(hwnd: HWND, state: &mut FlyoutState) {
@@ -424,7 +435,8 @@ unsafe fn position_and_show_flyout(hwnd: HWND, state: &mut FlyoutState) {
     let _ = GetMonitorInfoW(hmon, &mut mi);
     let work = mi.rcWork;
 
-    let margin = scale_dpi(10, state.dpi);
+    // 12px edge offset matches native Windows 11 Quick Settings tray flyout margin
+    let margin = scale_dpi(12, state.dpi);
     let mut x = pt.x - (width / 2);
     if x + width > work.right - margin {
         x = work.right - width - margin;
@@ -467,12 +479,13 @@ unsafe fn resize_visible_flyout(hwnd: HWND, state: &mut FlyoutState) {
         };
         let _ = GetMonitorInfoW(hmon, &mut mi);
         let work = mi.rcWork;
-        let margin = scale_dpi(10, state.dpi);
+        let margin = scale_dpi(12, state.dpi);
 
-        let mut new_y = y;
-        if new_y + height > work.bottom - margin {
-            new_y = (work.bottom - height - margin).max(work.top + margin);
-        }
+        let new_y = if y > (work.top + work.bottom) / 2 {
+            (work.bottom - height - margin).max(work.top + margin)
+        } else {
+            y.min(work.bottom - height - margin).max(work.top + margin)
+        };
         state.last_popup_pos = Some((x, new_y));
         let _ = MoveWindow(hwnd, x, new_y, width, height, true);
     } else {
@@ -480,13 +493,29 @@ unsafe fn resize_visible_flyout(hwnd: HWND, state: &mut FlyoutState) {
     }
 }
 
-unsafe fn show_tray_context_menu(hwnd: HWND) {
+unsafe fn show_tray_context_menu(hwnd: HWND, show_contrast: bool) {
     let mut pt = POINT::default();
     let _ = GetCursorPos(&mut pt);
 
     if let Ok(hmenu) = CreatePopupMenu() {
+        let contrast_flags: MENU_ITEM_FLAGS = if show_contrast {
+            MF_STRING | MF_CHECKED
+        } else {
+            MF_STRING | MF_UNCHECKED
+        };
         let _ = AppendMenuW(hmenu, MF_STRING, IDM_OPEN_SLIDERS, w!("Open Sliders"));
-        let _ = AppendMenuW(hmenu, MF_STRING, IDM_REFRESH_MONITORS, w!("Refresh Monitors"));
+        let _ = AppendMenuW(
+            hmenu,
+            contrast_flags,
+            IDM_TOGGLE_CONTRAST,
+            w!("Show Contrast"),
+        );
+        let _ = AppendMenuW(
+            hmenu,
+            MF_STRING,
+            IDM_REFRESH_MONITORS,
+            w!("Refresh Monitors"),
+        );
         let _ = AppendMenuW(hmenu, MF_SEPARATOR, 0, PCWSTR::null());
         let _ = AppendMenuW(hmenu, MF_STRING, IDM_QUIT, w!("Quit"));
 
@@ -504,18 +533,19 @@ unsafe fn show_tray_context_menu(hwnd: HWND) {
     }
 }
 
-fn format_header_text(index: usize, name: &str, available: bool) -> String {
+fn format_value_text(val: u32, available: bool) -> String {
     if available {
-        format!("Monitor {}: {}", index + 1, name)
+        format!("{}", val)
     } else {
-        format!("Monitor {}: {} (Syncing...)", index + 1, name)
+        "···".to_string()
     }
 }
 
 unsafe fn sync_or_rebuild_controls(hwnd: HWND, state: &mut FlyoutState, monitors: &[MonitorInfo]) {
     let new_topology: Vec<String> = monitors.iter().map(|m| m.id.clone()).collect();
 
-    if state.rendered_topology != new_topology || (monitors.is_empty() && state.bindings.is_empty()) {
+    if state.rendered_topology != new_topology || (monitors.is_empty() && state.bindings.is_empty())
+    {
         rebuild_monitor_controls(hwnd, state, monitors);
         resize_visible_flyout(hwnd, state);
         return;
@@ -523,13 +553,11 @@ unsafe fn sync_or_rebuild_controls(hwnd: HWND, state: &mut FlyoutState, monitors
 
     // Update headers and sliders in-place so active mouse drags are never interrupted
     for hdr in &mut state.headers {
-        if let Some(mon) = monitors.iter().find(|m| m.id == hdr.monitor_id) {
-            if hdr.available != mon.available || hdr.monitor_index != mon.index {
-                hdr.available = mon.available;
-                hdr.monitor_index = mon.index;
-                let text = format_header_text(mon.index, &hdr.base_name, mon.available);
-                set_window_text(hdr.header_hwnd, &text);
-            }
+        if let Some(mon) = monitors.iter().find(|m| m.id == hdr.monitor_id)
+            && hdr.available != mon.available
+        {
+            hdr.available = mon.available;
+            set_window_text(hdr.header_hwnd, &hdr.base_name);
         }
     }
 
@@ -553,114 +581,133 @@ unsafe fn sync_or_rebuild_controls(hwnd: HWND, state: &mut FlyoutState, monitors
                 );
             }
 
-            if binding.last_value != target_val {
+            if binding.last_value != target_val || binding.available != mon.available {
                 binding.last_value = target_val;
+                binding.available = mon.available;
                 SendMessageW(
                     binding.slider_hwnd,
                     TBM_SETPOS,
                     Some(WPARAM(1)),
                     Some(LPARAM(target_val as isize)),
                 );
-                set_window_text(binding.value_label_hwnd, &format!("{}%", target_val));
+                set_window_text(
+                    binding.value_label_hwnd,
+                    &format_value_text(target_val, mon.available),
+                );
             }
         }
     }
 }
 
-unsafe fn rebuild_monitor_controls(
-    hwnd: HWND,
-    state: &mut FlyoutState,
-    monitors: &[MonitorInfo],
-) {
+unsafe fn rebuild_monitor_controls(hwnd: HWND, state: &mut FlyoutState, monitors: &[MonitorInfo]) {
     for child in state.child_hwnds.drain(..) {
         let _ = DestroyWindow(child);
     }
+    state.muted_hwnds.clear();
     state.headers.clear();
     state.bindings.clear();
     state.rendered_topology = monitors.iter().map(|m| m.id.clone()).collect();
 
     let dpi = state.dpi;
-    let width = scale_dpi(360, dpi);
+    let width = scale_dpi(312, dpi);
     let pad = scale_dpi(16, dpi);
-    let close_w = scale_dpi(34, dpi);
-    let close_h = scale_dpi(28, dpi);
     let mut y = pad;
 
-    if let Some(close_btn) = create_close_button(
-        hwnd,
-        state.hinstance,
-        width - pad - close_w,
-        scale_dpi(10, dpi),
-        close_w,
-        close_h,
-        state.font_close,
-    ) {
-        state.child_hwnds.push(close_btn);
-    }
-
     if monitors.is_empty() {
-        let empty_h = scale_dpi(44, dpi);
+        let empty_h = scale_dpi(36, dpi);
         if let Some(lbl) = create_static(
             hwnd,
             state.hinstance,
-            "Waiting for DDC/CI monitor...\n(If monitor is restarting, it will reconnect automatically)",
+            "Searching for DDC/CI displays…",
             pad,
-            y,
-            width - pad * 2 - close_w - scale_dpi(8, dpi),
+            y + scale_dpi(8, dpi),
+            width - pad * 2,
             empty_h,
             state.font_regular,
+            0,
         ) {
             state.child_hwnds.push(lbl);
+            state.muted_hwnds.push(lbl);
         }
         state.flyout_width = width;
         state.flyout_height = y + empty_h + pad;
         return;
     }
 
-    let hdr_h = scale_dpi(22, dpi);
-    let hdr_step = scale_dpi(28, dpi);
-    let row_step = scale_dpi(34, dpi);
-    let monitor_gap = scale_dpi(10, dpi);
+    let hdr_h = scale_dpi(20, dpi);
+    let hdr_step = scale_dpi(22, dpi);
+    let row_step = scale_dpi(30, dpi);
+    let section_gap = scale_dpi(10, dpi);
+    let val_w = scale_dpi(32, dpi);
 
     for (idx, mon) in monitors.iter().enumerate() {
-        let header_text = format_header_text(mon.index, &mon.display_name, mon.available);
-        let hdr_w = if idx == 0 {
-            width - pad * 2 - close_w - scale_dpi(8, dpi)
-        } else {
+        let max_b = mon.max_brightness.max(1);
+        let b_val = mon.brightness.min(max_b);
+
+        // When only Brightness is displayed, place the numeric readout right-aligned on the header row
+        // (Mies "Consolidate competing labels, values, track" pattern).
+        let header_w = if state.show_contrast {
             width - pad * 2
+        } else {
+            width - pad * 2 - val_w - scale_dpi(8, dpi)
         };
+
         if let Some(header) = create_static(
             hwnd,
             state.hinstance,
-            &header_text,
+            &mon.display_name,
             pad,
             y,
-            hdr_w,
+            header_w,
             hdr_h,
             state.font_bold,
+            0,
         ) {
             state.child_hwnds.push(header);
             state.headers.push(MonitorHeaderBinding {
                 monitor_id: mon.id.clone(),
-                monitor_index: mon.index,
                 header_hwnd: header,
                 base_name: mon.display_name.clone(),
                 available: mon.available,
             });
         }
+
+        let header_val_hwnd = if !state.show_contrast {
+            let val_text = format_value_text(b_val, mon.available);
+            if let Some(vh) = create_static(
+                hwnd,
+                state.hinstance,
+                &val_text,
+                width - pad - val_w,
+                y,
+                val_w,
+                hdr_h,
+                state.font_regular,
+                SS_RIGHT_STYLE,
+            ) {
+                state.child_hwnds.push(vh);
+                state.muted_hwnds.push(vh);
+                Some(vh)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         y += hdr_step;
 
-        let max_b = mon.max_brightness.max(1);
-        let b_val = mon.brightness.min(max_b);
         if let Some((b_slider, b_val_lbl)) = create_slider_row(
             hwnd,
             state,
-            "Brightness",
+            "☀",
             b_val,
             max_b,
+            mon.available,
             pad,
             y,
             width,
+            header_val_hwnd,
         ) {
             state.bindings.push(SliderBinding {
                 monitor_id: mon.id.clone(),
@@ -669,82 +716,127 @@ unsafe fn rebuild_monitor_controls(
                 value_label_hwnd: b_val_lbl,
                 last_value: b_val,
                 max_value: max_b,
+                available: mon.available,
                 is_dragging: false,
             });
         }
         y += row_step;
 
-        let max_c = mon.max_contrast.max(1);
-        let c_val = mon.contrast.min(max_c);
-        if let Some((c_slider, c_val_lbl)) = create_slider_row(
-            hwnd,
-            state,
-            "Contrast",
-            c_val,
-            max_c,
-            pad,
-            y,
-            width,
-        ) {
-            state.bindings.push(SliderBinding {
-                monitor_id: mon.id.clone(),
-                kind: ControlKind::Contrast,
-                slider_hwnd: c_slider,
-                value_label_hwnd: c_val_lbl,
-                last_value: c_val,
-                max_value: max_c,
-                is_dragging: false,
-            });
+        if state.show_contrast {
+            let max_c = mon.max_contrast.max(1);
+            let c_val = mon.contrast.min(max_c);
+            if let Some((c_slider, c_val_lbl)) = create_slider_row(
+                hwnd,
+                state,
+                "◐",
+                c_val,
+                max_c,
+                mon.available,
+                pad,
+                y,
+                width,
+                None,
+            ) {
+                state.bindings.push(SliderBinding {
+                    monitor_id: mon.id.clone(),
+                    kind: ControlKind::Contrast,
+                    slider_hwnd: c_slider,
+                    value_label_hwnd: c_val_lbl,
+                    last_value: c_val,
+                    max_value: max_c,
+                    available: mon.available,
+                    is_dragging: false,
+                });
+            }
+            y += row_step;
         }
-        y += row_step;
 
         if idx + 1 < monitors.len() {
-            y += monitor_gap;
+            y += section_gap / 2;
+            if let Some(div) = create_static(
+                hwnd,
+                state.hinstance,
+                "",
+                pad,
+                y,
+                width - pad * 2,
+                scale_dpi(2, dpi),
+                state.font_regular,
+                SS_ETCHEDHORZ_STYLE,
+            ) {
+                state.child_hwnds.push(div);
+            }
+            y += section_gap;
         }
     }
 
     state.flyout_width = width;
-    state.flyout_height = y + pad;
+    state.flyout_height = y + pad - scale_dpi(4, dpi);
 }
 
 #[allow(clippy::too_many_arguments)]
 unsafe fn create_slider_row(
     parent: HWND,
     state: &mut FlyoutState,
-    label: &str,
+    glyph: &str,
     initial_val: u32,
     max_val: u32,
+    available: bool,
     pad: i32,
     y: i32,
     total_width: i32,
+    existing_val_hwnd: Option<HWND>,
 ) -> Option<(HWND, HWND)> {
     let dpi = state.dpi;
-    let label_w = scale_dpi(74, dpi);
-    let val_w = scale_dpi(42, dpi);
-    let gap = scale_dpi(4, dpi);
-    let slider_w = total_width - pad * 2 - label_w - val_w - gap * 2;
-    let text_y_offset = scale_dpi(5, dpi);
-    let text_h = scale_dpi(20, dpi);
-    let slider_h = scale_dpi(30, dpi);
+    let show_glyph_and_inline_val = existing_val_hwnd.is_none();
 
-    let name_hwnd = create_static(
-        parent,
-        state.hinstance,
-        label,
-        pad,
-        y + text_y_offset,
-        label_w,
-        text_h,
-        state.font_regular,
-    )?;
-    state.child_hwnds.push(name_hwnd);
+    let glyph_w = if show_glyph_and_inline_val {
+        scale_dpi(18, dpi)
+    } else {
+        0
+    };
+    let val_w = if show_glyph_and_inline_val {
+        scale_dpi(32, dpi)
+    } else {
+        0
+    };
+    let gap = scale_dpi(6, dpi);
+    let slider_x = if show_glyph_and_inline_val {
+        pad + glyph_w + gap
+    } else {
+        pad
+    };
+    let slider_w = if show_glyph_and_inline_val {
+        total_width - pad * 2 - glyph_w - val_w - gap * 2
+    } else {
+        total_width - pad * 2
+    };
+    let text_y_offset = scale_dpi(4, dpi);
+    let text_h = scale_dpi(20, dpi);
+    let slider_h = scale_dpi(26, dpi);
+
+    if show_glyph_and_inline_val {
+        let glyph_hwnd = create_static(
+            parent,
+            state.hinstance,
+            glyph,
+            pad,
+            y + text_y_offset,
+            glyph_w,
+            text_h,
+            state.font_regular,
+            0,
+        )?;
+        state.child_hwnds.push(glyph_hwnd);
+        state.muted_hwnds.push(glyph_hwnd);
+    }
 
     let slider_hwnd = CreateWindowExW(
         Default::default(),
         TRACKBAR_CLASSW,
         PCWSTR::null(),
-        WS_CHILD | WS_VISIBLE | WINDOW_STYLE(TBS_HORZ | TBS_AUTOTICKS | TBS_TOOLTIPS),
-        pad + label_w + gap,
+        WS_CHILD | WS_VISIBLE | WINDOW_STYLE(TBS_HORZ | TBS_NOTICKS),
+        slider_x,
         y,
         slider_w,
         slider_h,
@@ -769,68 +861,33 @@ unsafe fn create_slider_row(
     );
     SendMessageW(
         slider_hwnd,
-        TBM_SETTICFREQ,
-        Some(WPARAM(10)),
-        Some(LPARAM(0)),
-    );
-    SendMessageW(
-        slider_hwnd,
         TBM_SETPOS,
         Some(WPARAM(1)),
         Some(LPARAM(initial_val as isize)),
     );
     state.child_hwnds.push(slider_hwnd);
 
-    let val_text = format!("{}%", initial_val);
-    let val_hwnd = create_static(
-        parent,
-        state.hinstance,
-        &val_text,
-        pad + label_w + slider_w + gap * 2,
-        y + text_y_offset,
-        val_w,
-        text_h,
-        state.font_regular,
-    )?;
-    state.child_hwnds.push(val_hwnd);
+    let val_hwnd = if let Some(vh) = existing_val_hwnd {
+        vh
+    } else {
+        let val_text = format_value_text(initial_val, available);
+        let vh = create_static(
+            parent,
+            state.hinstance,
+            &val_text,
+            total_width - pad - val_w,
+            y + text_y_offset,
+            val_w,
+            text_h,
+            state.font_regular,
+            SS_RIGHT_STYLE,
+        )?;
+        state.child_hwnds.push(vh);
+        state.muted_hwnds.push(vh);
+        vh
+    };
 
     Some((slider_hwnd, val_hwnd))
-}
-
-unsafe fn create_close_button(
-    parent: HWND,
-    hinstance: HINSTANCE,
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
-    font: HFONT,
-) -> Option<HWND> {
-    let hwnd = CreateWindowExW(
-        Default::default(),
-        w!("BUTTON"),
-        w!("✕"),
-        WS_CHILD
-            | WS_VISIBLE
-            | WINDOW_STYLE((BS_PUSHBUTTON | BS_CENTER | BS_VCENTER) as u32),
-        x,
-        y,
-        w,
-        h,
-        Some(parent),
-        Some(HMENU(IDM_CLOSE_FLYOUT as *mut std::ffi::c_void)),
-        Some(hinstance),
-        None,
-    )
-    .ok()?;
-
-    SendMessageW(
-        hwnd,
-        WM_SETFONT,
-        Some(WPARAM(font.0 as usize)),
-        Some(LPARAM(1)),
-    );
-    Some(hwnd)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -843,13 +900,14 @@ unsafe fn create_static(
     w: i32,
     h: i32,
     font: HFONT,
+    extra_style: u32,
 ) -> Option<HWND> {
     let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
     let hwnd = CreateWindowExW(
         Default::default(),
         w!("STATIC"),
         PCWSTR(wide.as_ptr()),
-        WS_CHILD | WS_VISIBLE,
+        WS_CHILD | WS_VISIBLE | WINDOW_STYLE(extra_style),
         x,
         y,
         w,
@@ -875,12 +933,7 @@ unsafe fn set_window_text(hwnd: HWND, text: &str) {
     let _ = SetWindowTextW(hwnd, PCWSTR(wide.as_ptr()));
 }
 
-unsafe extern "system" fn wndproc(
-    hwnd: HWND,
-    msg: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
+unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     let state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut FlyoutState;
 
     if !state_ptr.is_null() {
@@ -919,17 +972,14 @@ unsafe extern "system" fn wndproc(
                     state.dpi = new_dpi;
                     let old_reg = state.font_regular;
                     let old_bold = state.font_bold;
-                    let old_close = state.font_close;
-                    let (new_reg, new_bold, new_close) = create_fonts_for_dpi(new_dpi);
+                    let (new_reg, new_bold) = create_fonts_for_dpi(new_dpi);
                     state.font_regular = new_reg;
                     state.font_bold = new_bold;
-                    state.font_close = new_close;
                     let monitors = state.ddc.snapshots();
                     rebuild_monitor_controls(hwnd, state, &monitors);
                     resize_visible_flyout(hwnd, state);
                     let _ = DeleteObject(HGDIOBJ(old_reg.0));
                     let _ = DeleteObject(HGDIOBJ(old_bold.0));
-                    let _ = DeleteObject(HGDIOBJ(old_close.0));
                 }
             }
             LRESULT(0)
@@ -963,7 +1013,7 @@ unsafe extern "system" fn wndproc(
                     let pos = SendMessageW(slider_hwnd, TBM_GETPOS, None, None).0 as u32;
                     if pos != binding.last_value {
                         binding.last_value = pos;
-                        set_window_text(binding.value_label_hwnd, &format!("{}%", pos));
+                        set_window_text(binding.value_label_hwnd, &format_value_text(pos, true));
 
                         let id = binding.monitor_id.clone();
                         match binding.kind {
@@ -1015,8 +1065,13 @@ unsafe extern "system" fn wndproc(
             if !state_ptr.is_null() {
                 let state = &*state_ptr;
                 let hdc = HDC(wparam.0 as *mut std::ffi::c_void);
-                SetBkColor(hdc, COLORREF(0x00F3F3F3));
-                SetTextColor(hdc, COLORREF(0x001A1A1A));
+                let ctrl_hwnd = HWND(lparam.0 as *mut std::ffi::c_void);
+                SetBkColor(hdc, COLOR_SURFACE_BG);
+                if state.muted_hwnds.contains(&ctrl_hwnd) {
+                    SetTextColor(hdc, COLOR_TEXT_MUTED);
+                } else {
+                    SetTextColor(hdc, COLOR_TEXT_PRIMARY);
+                }
                 return LRESULT(state.bg_brush.0 as isize);
             }
             DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -1048,7 +1103,12 @@ unsafe extern "system" fn wndproc(
                     }
                 }
                 WM_RBUTTONUP => {
-                    show_tray_context_menu(hwnd);
+                    let show_contrast = if !state_ptr.is_null() {
+                        (&*state_ptr).show_contrast
+                    } else {
+                        false
+                    };
+                    show_tray_context_menu(hwnd, show_contrast);
                 }
                 _ => {}
             }
@@ -1067,20 +1127,24 @@ unsafe extern "system" fn wndproc(
                         state.ddc.request_refresh();
                     }
                 }
+                IDM_TOGGLE_CONTRAST => {
+                    if !state_ptr.is_null() {
+                        let state = &mut *state_ptr;
+                        state.show_contrast = !state.show_contrast;
+                        let snapshots = state.ddc.snapshots();
+                        rebuild_monitor_controls(hwnd, state, &snapshots);
+                        if IsWindowVisible(hwnd).as_bool() {
+                            resize_visible_flyout(hwnd, state);
+                        } else {
+                            position_and_show_flyout(hwnd, state);
+                        }
+                    }
+                }
                 IDM_REFRESH_MONITORS => {
                     if !state_ptr.is_null() {
                         let state = &mut *state_ptr;
                         state.ddc.request_refresh();
                     }
-                }
-                IDM_CLOSE_FLYOUT => {
-                    if !state_ptr.is_null() {
-                        let state = &mut *state_ptr;
-                        for b in &mut state.bindings {
-                            b.is_dragging = false;
-                        }
-                    }
-                    let _ = ShowWindow(hwnd, SW_HIDE);
                 }
                 IDM_QUIT => {
                     let _ = DestroyWindow(hwnd);
@@ -1102,7 +1166,6 @@ unsafe extern "system" fn wndproc(
                 state.ddc.shutdown();
                 let _ = DeleteObject(HGDIOBJ(state.font_regular.0));
                 let _ = DeleteObject(HGDIOBJ(state.font_bold.0));
-                let _ = DeleteObject(HGDIOBJ(state.font_close.0));
                 let _ = DeleteObject(HGDIOBJ(state.bg_brush.0));
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
             }
