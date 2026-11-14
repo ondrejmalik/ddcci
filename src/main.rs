@@ -50,16 +50,16 @@ use windows::{
                 FindWindowW, GWLP_USERDATA, GetClientRect, GetCursorPos, GetMessageW,
                 GetWindowLongPtrW, HICON, IDC_ARROW, IDI_APPLICATION, IMAGE_ICON, IsWindowVisible,
                 KillTimer, LR_DEFAULTCOLOR, LoadCursorW, LoadIconW, LoadImageW, MENU_ITEM_FLAGS,
-                MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, MoveWindow,
-                PostMessageW, PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SW_HIDE,
-                SW_SHOW, SendMessageW, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
-                SetWindowTextW, ShowWindow, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RIGHTBUTTON,
-                TrackPopupMenu, TranslateMessage, WA_INACTIVE, WINDOW_STYLE, WM_ACTIVATE, WM_APP,
-                WM_CLOSE, WM_COMMAND, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DEVICECHANGE,
-                WM_DISPLAYCHANGE, WM_DPICHANGED, WM_ERASEBKGND, WM_HSCROLL, WM_KEYDOWN,
-                WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_RBUTTONUP, WM_SETFONT, WM_SETTINGCHANGE,
-                WM_TIMER, WM_USER, WNDCLASSEXW, WS_BORDER, WS_CHILD, WS_EX_TOOLWINDOW,
-                WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
+                MF_CHECKED, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, MoveWindow, PostMessageW,
+                PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SW_HIDE, SW_SHOW,
+                SendMessageW, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowTextW,
+                ShowWindow, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RIGHTBUTTON, TrackPopupMenu,
+                TranslateMessage, WA_INACTIVE, WINDOW_STYLE, WM_ACTIVATE, WM_APP, WM_CLOSE,
+                WM_COMMAND, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DEVICECHANGE, WM_DISPLAYCHANGE,
+                WM_DPICHANGED, WM_ERASEBKGND, WM_HSCROLL, WM_KEYDOWN, WM_LBUTTONDBLCLK,
+                WM_LBUTTONUP, WM_RBUTTONUP, WM_SETFONT, WM_SETTINGCHANGE, WM_TIMER, WM_USER,
+                WNDCLASSEXW, WS_BORDER, WS_CHILD, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+                WS_VISIBLE,
             },
         },
     },
@@ -85,9 +85,6 @@ const IDM_REFRESH_MONITORS: usize = 1002;
 const IDM_QUIT: usize = 1003;
 const IDM_TOGGLE_CONTRAST: usize = 1004;
 const IDM_TOGGLE_DARK_THEME: usize = 1005;
-const IDM_THEME_SYSTEM: usize = 1006;
-const IDM_THEME_DARK: usize = 1007;
-const IDM_THEME_LIGHT: usize = 1008;
 
 // SS_RIGHT and SS_ETCHEDHORZ for native Win32 static control alignment and subtle dividers
 const SS_RIGHT_STYLE: u32 = 0x0000_0002;
@@ -688,12 +685,7 @@ unsafe fn resize_visible_flyout(hwnd: HWND, state: &mut FlyoutState) {
     }
 }
 
-unsafe fn show_tray_context_menu(
-    hwnd: HWND,
-    show_contrast: bool,
-    theme_mode: ThemeMode,
-    is_dark: bool,
-) {
+unsafe fn show_tray_context_menu(hwnd: HWND, show_contrast: bool, is_dark: bool) {
     let mut pt = POINT::default();
     let _ = GetCursorPos(&mut pt);
 
@@ -722,36 +714,6 @@ unsafe fn show_tray_context_menu(
             IDM_TOGGLE_DARK_THEME,
             w!("Dark Theme"),
         );
-
-        if let Ok(theme_menu) = CreatePopupMenu() {
-            let sys_flags = if theme_mode == ThemeMode::System {
-                MF_STRING | MF_CHECKED
-            } else {
-                MF_STRING | MF_UNCHECKED
-            };
-            let dark_flags = if theme_mode == ThemeMode::Dark {
-                MF_STRING | MF_CHECKED
-            } else {
-                MF_STRING | MF_UNCHECKED
-            };
-            let light_flags = if theme_mode == ThemeMode::Light {
-                MF_STRING | MF_CHECKED
-            } else {
-                MF_STRING | MF_UNCHECKED
-            };
-
-            let _ = AppendMenuW(
-                theme_menu,
-                sys_flags,
-                IDM_THEME_SYSTEM,
-                w!("Use Windows Setting"),
-            );
-            let _ = AppendMenuW(theme_menu, dark_flags, IDM_THEME_DARK, w!("Dark"));
-            let _ = AppendMenuW(theme_menu, light_flags, IDM_THEME_LIGHT, w!("Light"));
-
-            let _ = AppendMenuW(hmenu, MF_POPUP, theme_menu.0 as usize, w!("Theme Mode"));
-        }
-
         let _ = AppendMenuW(
             hmenu,
             MF_STRING,
@@ -1371,13 +1333,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     }
                 }
                 WM_RBUTTONUP => {
-                    let (show_contrast, theme_mode, is_dark) = if !state_ptr.is_null() {
+                    let (show_contrast, is_dark) = if !state_ptr.is_null() {
                         let s = &*state_ptr;
-                        (s.show_contrast, s.theme_mode, s.palette.is_dark)
+                        (s.show_contrast, s.palette.is_dark)
                     } else {
-                        (true, ThemeMode::System, is_windows_dark_theme_enabled())
+                        (true, is_windows_dark_theme_enabled())
                     };
-                    show_tray_context_menu(hwnd, show_contrast, theme_mode, is_dark);
+                    show_tray_context_menu(hwnd, show_contrast, is_dark);
                 }
                 _ => {}
             }
@@ -1417,18 +1379,6 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                             ThemeMode::Light
                         } else {
                             ThemeMode::Dark
-                        };
-                        save_user_preferences(state.theme_mode, state.show_contrast);
-                        apply_theme_to_flyout(hwnd, state);
-                    }
-                }
-                IDM_THEME_SYSTEM | IDM_THEME_DARK | IDM_THEME_LIGHT => {
-                    if !state_ptr.is_null() {
-                        let state = &mut *state_ptr;
-                        state.theme_mode = match cmd_id {
-                            IDM_THEME_DARK => ThemeMode::Dark,
-                            IDM_THEME_LIGHT => ThemeMode::Light,
-                            _ => ThemeMode::System,
                         };
                         save_user_preferences(state.theme_mode, state.show_contrast);
                         apply_theme_to_flyout(hwnd, state);
