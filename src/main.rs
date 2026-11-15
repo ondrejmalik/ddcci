@@ -516,7 +516,6 @@ fn run_tray_ui() -> windows::core::Result<()> {
 
         rebuild_monitor_controls(hwnd, &mut *state_ptr, &initial_monitors);
         add_or_update_tray_icon(hwnd, tray_hicon_copy, "DDC/CI Brightness & Contrast", false)?;
-        position_and_show_flyout(hwnd, &mut *state_ptr);
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).into() {
